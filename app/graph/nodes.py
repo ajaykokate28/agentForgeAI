@@ -1,25 +1,14 @@
 from app.graph.state import SupportedState
 
-def classify_intent(state: SupportedState) -> str:
-    """
-    Classifies the intent of a customer support message based on the provided state.
+from app.tools.customer_tools import (get_order_details, get_customer_details,  check_payment_status, check_refund_eligibility)
 
-    Args:
-        state (SupportedState): The state containing customer support information.
+from app.agents.intent_classifier import classify_intent_with_llm
 
-    Returns:
-        str: The classified intent of the message.
-    """
-    # Example logic for intent classification
-    if "refund" in state["message"].lower():
-        return "request_refund"
-    elif "order status" in state["message"].lower():
-        return "check_order_status"
-    elif "technical issue" in state["message"].lower():
-        return "report_technical_issue"
-    else:
-        return "general_inquiry"
+async def classify_intent(state: SupportedState) -> dict:
 
+    message = state["message"]
+
+    intent = await classify_intent_with_llm(message)
     return {
         "intent": intent
     }
@@ -45,3 +34,70 @@ def route_request(state: SupportedState) -> str:
         return "refund"
     else:
         return "general"
+
+def handle_order_request(state: SupportedState) -> str:
+   order_id = state["order_id"]
+
+   result = get_order_details(order_id)
+
+   if result["found"]:
+       order = result["order"]
+
+       response = (f"Your order {order_id} is for {order['product']}. " f"The status is {order['order_status']}.")
+   else:
+        response = result["message"]
+
+   return {
+       "tool_result": result,
+       "final_response": response
+   }
+
+def handle_payment_request(state: SupportedState) -> str:
+    order_id = state["order_id"]
+
+    result = check_payment_status(order_id)
+
+    if result["found"]:
+        payment = result["payment"]
+
+        response = (
+            f"The payment for order {order_id} is {payment['status']}. "
+            f"The amount paid is {payment['amount']}."
+        )
+    else:
+        response = result["message"]
+
+    return {
+        "tool_result": result,
+        "final_response": response
+    }
+
+def handle_refund_request(state: SupportedState) -> dict:
+    order_id = state["order_id"]
+
+    result = check_refund_eligibility(order_id)
+
+    if result["eligible"]: response =( f"Your order {order_id} is eligible for a refund."
+                                      f"Eligible refund amount: Rs. {result['refund_amount']}."
+                                      "Please note that the refund has not been processed yet.")
+    else: response = (f"Your order {order_id} is not eligible for a refund. "
+                      f"Reason: {result['reason']}")
+    return {
+        "tool_result": result,
+        "final_response": response         
+         }
+
+def handle_general_request(state: SupportedState) -> dict:
+    message = state["message"]
+
+    response = (
+        "Thank you for contacting customer support."
+        "I can help you with customer details, order information, "
+        "payment status, and refund eligibility. "
+        "Please share more details about your issue."
+    )
+
+    return {
+        "tool_result": {},
+        "final_response": response
+    }
